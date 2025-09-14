@@ -1,0 +1,91 @@
+import os
+import zlib
+import hashlib
+
+class InitCommand:    
+    def execute(self):
+        os.mkdir(".git")
+        os.mkdir(".git/objects")
+        os.mkdir(".git/refs")
+        with open(".git/HEAD", "w") as f:
+            f.write("ref: refs/heads/main\n")
+        print("Initialized git directory")
+
+class CatFileCommand:
+    def __init__(self, object_hash):
+        self.hash = object_hash
+        
+    def execute(self):
+        filename = f".git/objects/{self.hash[0:2]}/{self.hash[2:]}"
+        with open(filename, "rb") as f:
+            data = f.read()
+            decompress_data = zlib.decompress(data)
+            header_end = decompress_data.index(b"\x00")
+            content = decompress_data[header_end + 1 :].strip()
+            print(content.decode("utf-8"), end="")
+
+class HashObjectCommand:
+    def __init__(self, filename):
+        self.filename = filename
+    
+    def execute(self):
+        with open(self.filename, "rb") as f:
+            data = f.read()
+            header = f"blob {len(data)}\x00".encode("utf-8")
+            stored_data = header + data
+            hash_object = hashlib.sha1()
+            hash_object.update(stored_data)
+            sha1_hash = hash_object.hexdigest()
+            compressed_data = zlib.compress(stored_data)
+            dir_path = f".git/objects/{sha1_hash[0:2]}"
+            if not os.path.exists(dir_path):
+                os.mkdir(dir_path)
+                with open(f"{dir_path}/{sha1_hash[2:]}", "wb") as obj_file:
+                    obj_file.write(compressed_data)
+            print(sha1_hash)
+
+class ListTreeCommand:
+    def __init__(self, object_hash, is_name_only):
+        self.object_hash = object_hash
+        self.is_name_only = is_name_only
+
+    def execute(self):
+        file_path = f".git/objects/{self.object_hash[0:2]}/{self.object_hash[2:]}"
+        with open(file_path, "rb") as f:
+            data = f.read()
+            decompress_data = zlib.decompress(data)
+            header_end = decompress_data.index(b"\x00")
+            content = decompress_data[header_end + 1 :]
+
+        entries = []
+        while content:
+            space_index = content.index(b" ")
+            null_index = content.index(b"\x00", space_index)
+
+            name_bytes = content[space_index + 1 : null_index]
+            name = name_bytes.decode("utf-8")
+
+            if self.is_name_only:
+                entries.append(name)
+
+            else:
+                mode = content[:space_index].decode("utf-8")
+
+                type_mode = ""
+                if mode == "40000":  # Directory
+                    type_mode = "tree"
+                elif mode == "100644":  # Regular file
+                    type_mode = "blob"
+
+                binary_hash = content[null_index + 1 : null_index + 1 + 20]
+                sha = binary_hash.hex()
+
+                row_format = f"{mode} {type_mode} {sha}\t{name}"
+
+                entries.append(row_format)
+            end_of_entry = null_index + 1 + 20
+            content = content[end_of_entry:]
+
+        entries.sort()
+        for entry in entries:
+            print(entry)
