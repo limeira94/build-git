@@ -2,7 +2,7 @@ import sys
 import os
 import zlib
 import hashlib
-
+import time
 
 def write_tree(directory="."): 
     list_os = os.listdir(directory)
@@ -143,7 +143,37 @@ def main():
     elif command == "write-tree":
         tree_sha = write_tree()
         print(tree_sha)
-    
+
+    elif command == "commit-tree":
+        tree_hash = sys.argv[2]
+        if "-p" in sys.argv:
+            p_index = sys.argv.index("-p")
+            parent_hash = sys.argv[p_index + 1]
+        if "-m" in sys.argv:
+            m_index = sys.argv.index("-m")
+            message = sys.argv[m_index + 1]
+        author_hardecoded = "Your Name <your-email@exemplo.com>"
+        time_stamp = int(time.time())
+        time_zone = time.strftime("%z")
+
+        author_time = f"{author_hardecoded} {time_stamp} {time_zone}"
+
+        commit_content = f"tree {tree_hash}\nparent {parent_hash}\nauthor {author_time}\ncommitter {author_time}\n\n{message}\n"
+        commit_content_bytes = commit_content.encode("utf-8")
+        
+        header = f"commit {len(commit_content_bytes)}\x00".encode("utf-8")
+        hash_object = hashlib.sha1()
+        stored_data = header + commit_content_bytes
+        hash_object.update(stored_data)
+        sha1_hash = hash_object.hexdigest()
+        compressed_data = zlib.compress(stored_data)
+        dir_path = f".git/objects/{sha1_hash[0:2]}"
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+            with open(f"{dir_path}/{sha1_hash[2:]}", "wb") as obj_file:
+                obj_file.write(compressed_data)
+        print(sha1_hash)
+        
     else:
         raise RuntimeError(f"Unknown command #{command}")
 
